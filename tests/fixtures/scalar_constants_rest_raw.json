@@ -1,0 +1,22 @@
+{
+  "column_names": [
+    "n",
+    "f",
+    "ts",
+    "s"
+  ],
+  "column_types": [
+    "bigint",
+    "double",
+    "timestamp(3)",
+    "varchar(1)"
+  ],
+  "rows": [
+    {
+      "f": 1.5,
+      "n": 42,
+      "s": "x",
+      "ts": "2024-01-01 00:00:00"
+    }
+  ]
+}

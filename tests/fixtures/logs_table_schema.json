@@ -1,0 +1,19 @@
+{
+  "block_time": "timestamp(3)",
+  "block_number": "int64",
+  "block_hash": "binary",
+  "contract_address": "binary",
+  "topic0": "binary",
+  "topic1": "binary",
+  "topic2": "binary",
+  "topic3": "binary",
+  "data": "binary",
+  "tx_hash": "binary",
+  "index": "int32",
+  "tx_index": "int32",
+  "block_date": "date",
+  "tx_from": "binary",
+  "tx_to": "binary",
+  "blob_gas_price": "int64",
+  "blob_gas_used": "int64"
+}

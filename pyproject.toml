@@ -1,0 +1,71 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ibis-dune"
+version = "0.1.0"
+description = "Query Dune Analytics with Ibis table expressions (Trino + automatic REST fallback)"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "Firlej" }]
+dependencies = [
+  "ibis-framework[trino]>=12.0.0,<13",
+  "dune-client>=1.10.0",
+]
+keywords = ["ibis", "dune", "trino", "analytics"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Typing :: Typed",
+  "Topic :: Database",
+]
+
+[project.urls]
+Homepage = "https://github.com/Firlej/ibis-dune"
+Repository = "https://github.com/Firlej/ibis-dune"
+Issues = "https://github.com/Firlej/ibis-dune/issues"
+Documentation = "https://github.com/Firlej/ibis-dune#readme"
+
+[project.entry-points."ibis.backends"]
+dune = "ibis_dune"
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7",
+  "python-dotenv",
+  "build",
+  "twine",
+  "ruff",
+  "pre-commit",
+]
+
+[tool.setuptools.packages.find]
+include = ["ibis_dune*"]
+
+[tool.setuptools.package-data]
+ibis_dune = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+  "integration: requires DUNE_API_KEY and network",
+  "trino: live Trino vs REST parity (requires DUNE_API_KEY and Trino tier)",
+  "parity_mock: offline replay of captured live payloads (run after trino parity is green)",
+]
+
+[tool.ruff]
+target-version = "py311"
+src = ["ibis_dune", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]
