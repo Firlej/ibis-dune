@@ -129,3 +129,87 @@ def test_get_schema_rest_non_not_found_raises_dune_query_error() -> None:
     ):
         with pytest.raises(DuneQueryError):
             backend.get_schema("some_table", database="foo")
+
+
+def _tier_error() -> trino.exceptions.TrinoUserError:
+    return _trino_user_error(
+        error_name="INVALID_PERFORMANCE_TIER",
+        message="Invalid performance tier: large",
+    )
+
+
+def test_infer_schema_for_sql_tier_error_flips_to_api() -> None:
+    backend = Backend().connect(dune_api_key="offline-test-key")
+    expected = ibis.schema({"n": "int64"})
+    tier = _tier_error()
+
+    class FakeCursor:
+        def execute(self, _sql: str) -> None:
+            raise tier
+
+        def __enter__(self) -> FakeCursor:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+    with (
+        patch.object(backend, "begin", return_value=FakeCursor()),
+        patch.object(
+            backend, "_schema_from_api_limit0", return_value=expected
+        ) as mock_api,
+    ):
+        schema = backend._infer_schema_for_sql("SELECT CAST(1 AS BIGINT) AS n")
+
+    mock_api.assert_called_once_with("SELECT CAST(1 AS BIGINT) AS n")
+    assert backend._use_api is True
+    assert schema == expected
+
+
+def test_get_schema_trino_tier_error_flips_to_api() -> None:
+    backend = Backend().connect(dune_api_key="offline-test-key")
+    expected = ibis.schema({"id": "int64"})
+    tier = _tier_error()
+
+    with (
+        patch.object(
+            backend, "_schema_from_information_schema", return_value=ibis.schema({})
+        ),
+        patch.object(backend, "_schema_from_trino_limit0", side_effect=tier),
+        patch.object(
+            backend, "_schema_from_api_limit0", return_value=expected
+        ) as mock_api,
+    ):
+        schema = backend.get_schema("some_table", database="foo")
+
+    mock_api.assert_called_once_with('SELECT * FROM "foo"."some_table"')
+    assert backend._use_api is True
+    assert schema == expected
+
+
+def test_schema_from_trino_limit0_tier_error_flips_to_api() -> None:
+    backend = Backend().connect(dune_api_key="offline-test-key")
+    expected = ibis.schema({"id": "int64"})
+    tier = _tier_error()
+
+    class FakeCursor:
+        def execute(self, _sql: str) -> None:
+            raise tier
+
+        def __enter__(self) -> FakeCursor:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+    with (
+        patch.object(backend, "begin", return_value=FakeCursor()),
+        patch.object(
+            backend, "_schema_from_api_limit0", return_value=expected
+        ) as mock_api,
+    ):
+        schema = backend._schema_from_trino_limit0('"foo"."bar"')
+
+    mock_api.assert_called_once_with('SELECT * FROM "foo"."bar"')
+    assert backend._use_api is True
+    assert schema == expected

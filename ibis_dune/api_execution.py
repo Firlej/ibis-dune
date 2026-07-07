@@ -52,6 +52,56 @@ class ApiExecutionMixin:
         return "Invalid performance tier" in str(exc)
 
     @staticmethod
+    def _is_auth_error(exc: BaseException) -> bool:
+        """Return whether ``exc`` indicates invalid or missing Dune API credentials."""
+        message = getattr(exc, "message", None) or str(exc)
+        lower = message.lower()
+        return (
+            "401" in message
+            or "403" in message
+            or "unauthorized" in lower
+            or "invalid api key" in lower
+            or "authentication" in lower
+        )
+
+    _AUTH_ERROR_HINT = "Dune authentication failed — check dune_api_key"
+
+    def _flip_to_api_on_tier_error(self, exc: BaseException) -> bool:
+        """Set ``_use_api`` when ``exc`` is a Trino tier rejection; return whether flipped."""
+        if not self.is_invalid_performance_tier_error(exc):
+            return False
+        if isinstance(exc, trino.exceptions.TrinoUserError):
+            self._log_trino_tier_fallback(exc)
+        else:
+            log.warning(
+                "Trino failed (%s); switching to Dune REST /sql/execute "
+                "(performance=%s): %s",
+                type(exc).__name__,
+                self.dune_sql_performance,
+                exc,
+            )
+        self._use_api = True
+        return True
+
+    @classmethod
+    def _dune_query_error_from_exc(cls, exc: BaseException) -> DuneQueryError:
+        """Wrap ``exc`` in ``DuneQueryError``, with an auth hint when applicable."""
+        if isinstance(exc, DuneQueryError):
+            return exc
+        if cls._is_auth_error(exc):
+            if isinstance(exc, trino.exceptions.TrinoQueryError):
+                return DuneQueryError(
+                    message=f"{cls._AUTH_ERROR_HINT}\n{exc.message}",
+                    query_id=getattr(exc, "query_id", None),
+                    original=exc,
+                )
+            return DuneQueryError(
+                message=f"{cls._AUTH_ERROR_HINT}\n{exc}",
+                original=exc,
+            )
+        return cls._to_dune_query_error(exc)
+
+    @staticmethod
     def _to_dune_query_error(exc: BaseException) -> DuneQueryError:
         """Wrap a Trino failure in a compact ``DuneQueryError``."""
         if isinstance(exc, trino.exceptions.TrinoQueryError):
@@ -322,18 +372,16 @@ class ApiExecutionMixin:
         try:
             return super().execute(expr, params=params, limit=limit, **kwargs)  # type: ignore[misc]
         except trino.exceptions.TrinoUserError as e:
-            if self.is_invalid_performance_tier_error(e):
-                self._log_trino_tier_fallback(e)
-                self._use_api = True
+            if self._flip_to_api_on_tier_error(e):
                 df = self._execute_expr_via_api(
                     expr, params=params, limit=limit, **kwargs
                 )
                 return expr.__pandas_result__(df)
-            raise self._to_dune_query_error(e) from None
+            raise self._dune_query_error_from_exc(e) from None
         except trino.exceptions.TrinoQueryError as e:
-            raise self._to_dune_query_error(e) from None
+            raise self._dune_query_error_from_exc(e) from None
         except trino.exceptions.HttpError as e:
-            raise self._to_dune_query_error(e) from None
+            raise self._dune_query_error_from_exc(e) from None
 
     def _cursor_batches(  # type: ignore[no-untyped-def]
         self,
@@ -356,19 +404,17 @@ class ApiExecutionMixin:
                 expr, params=params, limit=limit, chunk_size=chunk_size
             )
         except trino.exceptions.TrinoUserError as e:
-            if self.is_invalid_performance_tier_error(e):
-                self._log_trino_tier_fallback(e)
-                self._use_api = True
+            if self._flip_to_api_on_tier_error(e):
                 df = self._execute_expr_via_api(expr, params=params, limit=limit)
                 yield from self._dataframe_to_batches(
                     df, expr.as_table().schema(), chunk_size
                 )
                 return
-            raise self._to_dune_query_error(e) from None
+            raise self._dune_query_error_from_exc(e) from None
         except trino.exceptions.TrinoQueryError as e:
-            raise self._to_dune_query_error(e) from None
+            raise self._dune_query_error_from_exc(e) from None
         except trino.exceptions.HttpError as e:
-            raise self._to_dune_query_error(e) from None
+            raise self._dune_query_error_from_exc(e) from None
 
     def _enforce_result_size_limits(self, total_bytes: int) -> None:
         if total_bytes > self.dune_api_max_bytes:
@@ -426,9 +472,14 @@ class ApiExecutionMixin:
             next_uri = batch.next_uri
         return rows
 
-    @staticmethod
-    def _to_dune_query_error_from_rest(exc: QueryFailedError) -> DuneQueryError:
+    @classmethod
+    def _to_dune_query_error_from_rest(cls, exc: QueryFailedError) -> DuneQueryError:
         """Wrap a Dune REST ``QueryFailedError`` as a ``DuneQueryError``."""
+        if cls._is_auth_error(exc):
+            return DuneQueryError(
+                message=f"{cls._AUTH_ERROR_HINT}\n{exc}",
+                original=exc,
+            )
         return DuneQueryError(message=str(exc), original=exc)
 
     def _log_trino_tier_fallback(self, exc: trino.exceptions.TrinoUserError) -> None:

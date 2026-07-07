@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here.
 
+## 0.1.1 — 2026-07-07
+
+### Fixed
+
+- **Free-tier API keys** — schema-less `sql()` and `get_schema()` LIMIT 0 probes now flip to REST on Trino "Invalid performance tier" errors, matching `execute()` behavior. Free-tier keys work without `force_api=True`.
+- **sqlglot Dune dialect** — pin `sqlglot>=26.4.0,!=26.32.0` so `from sqlglot.dialects.dune import Dune` resolves on fresh installs (e.g. Google Colab).
+
+### Improved
+
+- **Auth errors** — Trino and REST authentication failures wrap as `DuneQueryError` with a hint to check `dune_api_key`.
+
 ## 0.1.0 — 2026-07-06
 
 First public release of **ibis-dune**: an Ibis backend for querying [Dune Analytics](https://dune.com) with Python table expressions.

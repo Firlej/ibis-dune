@@ -12,8 +12,8 @@ from tests.tables import RENTED_DB, RENTED_TABLE, scalar_constants
 
 
 def test_package_version() -> None:
-    assert __version__ == "0.1.0"
-    assert metadata.version("ibis-dune") == "0.1.0"
+    assert __version__ == "0.1.1"
+    assert metadata.version("ibis-dune") == "0.1.1"
 
 
 def test_backend_name() -> None:
@@ -79,3 +79,15 @@ def test_sql_infers_schema(dune_backend: Backend) -> None:
     assert "n" in t.schema()
     out = t.execute()
     assert int(out["n"].iloc[0]) == 42
+
+
+@pytest.mark.integration
+def test_free_tier_sql_flips_to_api(free_tier_backend: Backend) -> None:
+    """Schema-less ``sql().execute()`` on free-tier keys must flip to REST."""
+    assert free_tier_backend._use_api is False
+    t = free_tier_backend.sql("SELECT CAST(1 AS BIGINT) AS n")
+    out = t.execute()
+    if not free_tier_backend._use_api:
+        pytest.skip("Trino tier available; not a free-tier key")
+    assert free_tier_backend.uses_api is True
+    assert int(out["n"].iloc[0]) == 1

@@ -162,3 +162,23 @@ def test_execute_sql_first_page_wraps_query_failed_error(
 
     assert "Table does not exist" in exc_info.value.message
     assert isinstance(exc_info.value.original, QueryFailedError)
+
+
+def test_execute_auth_error_includes_api_key_hint(
+    offline_backend: Backend,
+) -> None:
+    t = bound_table(offline_backend, RENTED_TABLE, RENTED_DB).limit(1)
+    auth_error = _trino_query_error(message="401 Unauthorized: invalid api key")
+
+    with patch.object(SQLBackend, "execute", side_effect=auth_error):
+        with pytest.raises(DuneQueryError) as exc_info:
+            t.execute()
+
+    assert "check dune_api_key" in exc_info.value.message
+
+
+def test_rest_auth_error_includes_api_key_hint() -> None:
+    exc = QueryFailedError("403 Forbidden: authentication failed")
+    wrapped = Backend._to_dune_query_error_from_rest(exc)
+    assert "check dune_api_key" in wrapped.message
+    assert wrapped.original is exc

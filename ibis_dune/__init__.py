@@ -12,7 +12,7 @@ from ibis_dune.schema_fetch import SchemaFetchMixin
 from ibis_dune.sql_method import SqlMethodMixin
 from ibis_dune.trino_cursor import TrinoCursorMixin
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "ApiExecutionMixin",

@@ -58,3 +58,9 @@ def trino_backend(dune_backend: Backend) -> Backend:
     if dune_backend._use_api:
         pytest.skip("Trino tier unavailable; backend fell back to REST")
     return dune_backend
+
+
+@pytest.fixture(scope="session")
+def free_tier_backend(dune_api_key: str) -> Backend:
+    """Return a backend for free-tier keys that lack Trino access."""
+    return Backend().connect(dune_api_key=dune_api_key)

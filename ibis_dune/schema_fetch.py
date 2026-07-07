@@ -181,9 +181,18 @@ class SchemaFetchMixin:
 
     def _schema_from_trino_limit0(self, qualified_table_sql: str) -> ibis.Schema:
         probe = f"SELECT * FROM {qualified_table_sql} LIMIT 0"
-        with self.begin() as cur:
-            cur.execute(probe)
-            desc = cur.description
+        try:
+            with self.begin() as cur:
+                cur.execute(probe)
+                desc = cur.description
+        except trino.exceptions.TrinoUserError as exc:
+            if self._flip_to_api_on_tier_error(exc):
+                return self._schema_from_api_limit0(
+                    f"SELECT * FROM {qualified_table_sql}"
+                )
+            raise self._dune_query_error_from_exc(exc) from None
+        except (trino.exceptions.TrinoQueryError, trino.exceptions.HttpError) as exc:
+            raise self._dune_query_error_from_exc(exc) from None
 
         if not desc:
             raise ValueError(
@@ -219,16 +228,28 @@ class SchemaFetchMixin:
         if self.uses_api:
             schema = self._schema_from_api_limit0(inner)
         else:
-            with self.begin() as cur:
-                cur.execute(self._append_limit0(inner))
-                desc = cur.description
-            if not desc:
-                raise ValueError(
-                    "Dune Trino returned no column metadata for SQL schema inference "
-                    f"(LIMIT 0 probe). Preview: {inner[:500]!r}"
-                )
-            trino_schema = self._schema_from_cursor_description(desc)
-            schema = self._prefer_api_column_types(inner, trino_schema)
+            try:
+                with self.begin() as cur:
+                    cur.execute(self._append_limit0(inner))
+                    desc = cur.description
+            except trino.exceptions.TrinoUserError as exc:
+                if self._flip_to_api_on_tier_error(exc):
+                    schema = self._schema_from_api_limit0(inner)
+                else:
+                    raise self._dune_query_error_from_exc(exc) from None
+            except (
+                trino.exceptions.TrinoQueryError,
+                trino.exceptions.HttpError,
+            ) as exc:
+                raise self._dune_query_error_from_exc(exc) from None
+            else:
+                if not desc:
+                    raise ValueError(
+                        "Dune Trino returned no column metadata for SQL schema inference "
+                        f"(LIMIT 0 probe). Preview: {inner[:500]!r}"
+                    )
+                trino_schema = self._schema_from_cursor_description(desc)
+                schema = self._prefer_api_column_types(inner, trino_schema)
         return self._normalize_schema(schema)
 
     def get_schema(
@@ -270,6 +291,9 @@ class SchemaFetchMixin:
                     raise TableNotFound(qualified) from exc
                 if isinstance(exc, DuneQueryError):
                     raise
-                raise self._to_dune_query_error(exc) from None
+                if self._flip_to_api_on_tier_error(exc):
+                    schema = self._schema_from_api_limit0(f"SELECT * FROM {qualified}")
+                else:
+                    raise self._dune_query_error_from_exc(exc) from None
 
         return self._normalize_schema(schema)

@@ -23,9 +23,9 @@ Requires **Python 3.11+**.
 pip install ibis-dune
 ```
 
-This pulls in `ibis-framework[trino]` (12.x) and `dune-client` (>=1.10).
+This pulls in `ibis-framework[trino]` (12.x), `dune-client` (>=1.10), and `sqlglot` (>=26.4).
 
-You need a [Dune API key](https://dune.com/docs/api/introduction) for live queries.
+You need a [Dune API key](https://dune.com/docs/api/introduction) for live queries. **Free-tier keys** (no Trino access) work out of the box — the backend automatically falls back to REST when Trino rejects the performance tier. You do not need `force_api=True`.
 
 ## Usage
 
