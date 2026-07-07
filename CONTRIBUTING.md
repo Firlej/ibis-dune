@@ -50,8 +50,19 @@ pre-commit run --all-files
 
 `ibis-dune` is a standalone backend package. Do not add consumer-specific coupling or application-layer behavior.
 
+## Releases
+
+User-facing release notes are published on [GitHub Releases](https://github.com/Firlej/ibis-dune/releases) only (no `CHANGELOG.md` in the repo).
+
+To cut a release:
+
+1. Add `.github/release-notes/vX.Y.Z.md` using [.github/release-template.md](.github/release-template.md) as a starting point.
+2. Bump `version` in `pyproject.toml` and `__version__` in `ibis_dune/__init__.py`.
+3. Merge to `main`, tag `vX.Y.Z`, and push the tag.
+4. The [release workflow](.github/workflows/release.yml) runs offline tests, builds artifacts, and publishes the GitHub Release with your notes file.
+
 ## Pull request checklist
 
 - Offline tests pass.
 - `parity_mock` tests pass.
-- User-visible changes are reflected in `CHANGELOG.md`.
+- User-visible changes include draft release notes in `.github/release-notes/vX.Y.Z.md` when preparing a version bump (published at tag time via the release workflow).

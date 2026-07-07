@@ -107,6 +107,12 @@ t = t.select(probe=raw_scalar("CAST(42 AS BIGINT)", "int64")).limit(5)
 - `DuneQueryError` — wraps Trino and REST query failures at the execution boundary
 - `DuneResultTooLargeError` — raised when a REST result exceeds `dune_api_max_bytes`
 
+## Releases
+
+Release notes live on [GitHub Releases](https://github.com/Firlej/ibis-dune/releases). Each version tag has a curated release page with fixed/improved/features sections.
+
+When cutting a new release, add `.github/release-notes/vX.Y.Z.md` with the notes body, bump the version, tag, and push — the release workflow publishes the GitHub Release and attaches build artifacts.
+
 ## Development
 
 ```bash
