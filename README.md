@@ -1,5 +1,14 @@
 # ibis-dune
 
+<p align="center">
+  <a href="https://github.com/Firlej/ibis-dune/actions/workflows/ci.yml?query=branch%3Amain"><img src="https://github.com/Firlej/ibis-dune/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://pypi.org/project/ibis-dune/"><img src="https://img.shields.io/pypi/v/ibis-dune.svg?style=flat-square&logo=pypi&logoColor=white&label=pypi" alt="PyPI version"></a>
+  <a href="https://pypi.org/project/ibis-dune/"><img src="https://img.shields.io/pypi/pyversions/ibis-dune.svg?style=flat-square&logo=python&logoColor=white" alt="Python versions"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=flat-square" alt="License: Apache 2.0"></a>
+  <a href="https://pepy.tech/projects/ibis-dune"><img src="https://static.pepy.tech/personalized-badge/ibis-dune?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads" alt="PyPI downloads"></a>
+  <a href="https://github.com/Firlej/ibis-dune/stargazers"><img src="https://img.shields.io/github/stars/Firlej/ibis-dune?style=social" alt="GitHub stars"></a>
+</p>
+
 Ibis backend for [Dune Analytics](https://dune.com).
 
 ## Overview

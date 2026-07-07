@@ -8,7 +8,28 @@ import trino
 from ibis.common.exceptions import TableNotFound
 from ibis_dune import Backend
 from ibis_dune.exceptions import DuneQueryError
-from ibis_dune.schema_fetch import SchemaFetchMixin
+from ibis_dune.schema_fetch import (
+    INFORMATION_SCHEMA_COLUMNS_SCHEMA,
+    SchemaFetchMixin,
+)
+
+
+@pytest.mark.integration
+def test_information_schema_columns_schema_matches_dune(dune_backend: Backend) -> None:
+    """Hardcoded ``information_schema.columns`` layout must match live Dune (LIMIT 0 probe)."""
+    qualified = '"information_schema"."columns"'
+    if dune_backend.uses_api:
+        live = dune_backend._schema_from_api_limit0(f"SELECT * FROM {qualified}")
+    else:
+        live = dune_backend._schema_from_trino_limit0(qualified)
+
+    expected = INFORMATION_SCHEMA_COLUMNS_SCHEMA
+    assert (
+        list(live.names) == list(expected.names)
+    ), f"column name mismatch\nlive: {list(live.names)}\nexpected: {list(expected.names)}"
+    live_sig = {n: str(d.copy(nullable=True)) for n, d in live.items()}
+    exp_sig = {n: str(d.copy(nullable=True)) for n, d in expected.items()}
+    assert live_sig == exp_sig, f"dtype mismatch\nlive: {live_sig}\nexpected: {exp_sig}"
 
 
 def test_normalize_api_column_name_strips_sql_quotes() -> None:

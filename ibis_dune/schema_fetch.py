@@ -16,6 +16,7 @@ INFORMATION_SCHEMA_COLUMNS_SCHEMA = ibis.schema(
         "table_name": "string",
         "column_name": "string",
         "ordinal_position": "int64",
+        "column_default": "string",
         "is_nullable": "string",
         "data_type": "string",
     }
