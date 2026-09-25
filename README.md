@@ -13,14 +13,17 @@ Ibis backend for [Dune Analytics](https://dune.com).
 
 ## Overview
 
-**ibis-dune** lets you query Dune with [Ibis](https://ibis-project.org/) table expressions: build filters, joins, and aggregates in Python, compile them to Dune SQL, and execute on Trino (`trino.api.dune.com`). When your API plan cannot use Trino, the backend automatically falls back to Dune REST `/sql/execute` and keeps results consistent across both paths.
+**ibis-dune** lets you query Dune with [Ibis](https://ibis-project.org/) table expressions: build filters, joins, and aggregates in Python, compile them to Dune SQL, and execute on Trino (`trino.api.dune.com`).
+
+A **paid Dune API plan with Trino access** is required. Free-tier keys can no longer run queries; the backend does not fall back to REST `/sql/execute`.
 
 The backend handles Dune-specific concerns that plain Trino backends do not:
 
-- **Schema discovery** — `get_schema()` and schema-less `sql()` infer column types without hand-written schemas
-- **uint256 and varbinary** — large integers and binary columns round-trip correctly in pandas, PyArrow, and rich previews
+- **Schema discovery** — `get_schema()` uses `information_schema`, then a Trino `LIMIT 0` probe. Schema-less `sql()` infers types with `LIMIT 0` only.
+- **uint256** — Dune `uint256` is `decimal(78, 0)` in the compiler, PyArrow, and rich preview.
+- **varbinary** — `get_schema()` reports `contract_address` as binary via `information_schema`. Schema-less `sql()` follows the Trino cursor type and reports it as string (varchar).
 - **Dune SQL helpers** — `hex_literal`, `raw_predicate`, and `raw_scalar` for fragments Ibis cannot express natively
-- **Typed errors** — `DuneQueryError` and `DuneResultTooLargeError` at the execution boundary
+- **Typed errors** — `DuneQueryError` at the execution boundary, including a paid-plan hint when Trino rejects the performance tier
 
 > Install **`ibis-framework`** from PyPI, not the legacy `ibis` package. Both import as `ibis` and cannot coexist.
 
@@ -32,9 +35,9 @@ Requires **Python 3.11+**.
 pip install ibis-dune
 ```
 
-This pulls in `ibis-framework[trino]` (12.x), `dune-client` (>=1.10), and `sqlglot` (>=26.4).
+This pulls in `ibis-framework[trino]` (12.x) and `sqlglot` (>=26.4).
 
-You need a [Dune API key](https://dune.com/docs/api/introduction) for live queries. **Free-tier keys** (no Trino access) work out of the box — the backend automatically falls back to REST when Trino rejects the performance tier. You do not need `force_api=True`.
+You need a [Dune API key](https://dune.com/docs/api/introduction) on a plan that includes Trino.
 
 ## Usage
 
@@ -52,21 +55,14 @@ from ibis_dune import Backend
 con = Backend().connect(dune_api_key="YOUR_DUNE_API_KEY")
 ```
 
-By default queries run on Trino. If Trino rejects the performance tier, the backend switches to REST for that session. Call `con.reset_to_trino()` to try Trino again. Pass `force_api=True` to start on REST.
-
 ## Connection options
 
 `Backend().connect()` / `ibis.dune.connect()` accept:
 
 | Parameter | Default | Purpose |
 |-----------|---------|---------|
-| `dune_api_key` | (required) | Dune API key |
-| `force_api` | `False` | Start on REST instead of Trino |
-| `dune_sql_performance` | `"medium"` | REST `/sql/execute` performance tier |
-| `dune_api_warning_bytes` | `1 GiB` | Log a warning when REST result exceeds this size |
-| `dune_api_max_bytes` | `4 GiB` | Refuse to fetch REST results larger than this |
-
-After connect, `con.uses_api` is `True` when execution is routed through REST (either `force_api=True` or tier-triggered fallback). `con.reset_to_trino()` clears tier-triggered fallback but does not override `force_api`.
+| `dune_api_key` | (required) | Dune API key with Trino access |
+| `**kwargs` | | Forwarded to the Ibis Trino backend |
 
 ## Example
 
@@ -93,6 +89,10 @@ t = (
 print(t.execute())
 ```
 
+## Examples
+
+[examples/dune_types.ipynb](examples/dune_types.ipynb) is an executed notebook: uint256 and binary columns on one row of `iq_protocol_polygon.enterprise_evt_rented`, plus `hex_literal`, `raw_predicate`, and `raw_scalar`. Export `DUNE_API_KEY` before re-running it.
+
 ## Dune SQL helpers
 
 Dune-specific SQL fragments compile through the backend compiler:
@@ -113,8 +113,7 @@ t = t.select(probe=raw_scalar("CAST(42 AS BIGINT)", "int64")).limit(5)
 
 ## Errors
 
-- `DuneQueryError` — wraps Trino and REST query failures at the execution boundary
-- `DuneResultTooLargeError` — raised when a REST result exceeds `dune_api_max_bytes`
+- `DuneQueryError` — wraps Trino query failures at the execution boundary. Invalid performance tier errors include a paid-plan hint.
 
 ## Releases
 
@@ -135,12 +134,10 @@ pip install -e ".[dev]"
 Offline tests (CI gate, no API key):
 
 ```bash
-pytest -m "not integration and not trino and not parity_mock" -q
+pytest -m "not integration" -q
 ```
 
-For integration tests against live Dune, copy `tests/.env.example` to `tests/.env` and set `DUNE_API_KEY`.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for test tiers, fixture refresh, and local workflow details.
+For integration tests against live Dune, copy `tests/.env.example` to `tests/.env` and set `DUNE_API_KEY` (paid Trino) and optionally `DUNE_API_KEY_FREE` (denied-path error tests).
 
 To build and validate a release artifact locally:
 

@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
 from unittest.mock import patch
 
-import pandas as pd
 import pytest
 import trino
-from dune_client.models import ExecutionState, QueryFailedError
 from ibis.backends.sql import SQLBackend
 from ibis_dune import Backend
 from ibis_dune.exceptions import DuneQueryError
@@ -86,28 +83,19 @@ def test_execute_raises_dune_query_error_on_trino_user_error(
     assert isinstance(exc_info.value.original, trino.exceptions.TrinoUserError)
 
 
-def test_execute_falls_back_on_invalid_performance_tier_error(
+def test_execute_invalid_performance_tier_requires_paid_trino(
     offline_backend: Backend,
 ) -> None:
     t = bound_table(offline_backend, RENTED_TABLE, RENTED_DB).limit(1)
-    tier_error = _trino_user_error(message="Invalid performance tier: large")
-    expected = pd.DataFrame(
-        {"contract_address": ["0x1"], "evt_tx_hash": ["0x2"]},
-    )
+    tier = _trino_user_error(message="Invalid performance tier: large")
 
-    with (
-        patch.object(SQLBackend, "execute", side_effect=tier_error),
-        patch.object(
-            offline_backend,
-            "_execute_expr_via_api",
-            return_value=expected,
-        ) as mock_api,
-    ):
-        result = t.execute()
+    with patch.object(SQLBackend, "execute", side_effect=tier):
+        with pytest.raises(DuneQueryError) as exc_info:
+            t.execute()
 
-    mock_api.assert_called_once()
-    assert offline_backend._use_api is True
-    assert result["contract_address"].iloc[0] == "0x1"
+    assert "paid API plan" in exc_info.value.message
+    assert "Invalid performance tier" in exc_info.value.message
+    assert isinstance(exc_info.value.original, trino.exceptions.TrinoUserError)
 
 
 def test_cursor_batches_raises_dune_query_error(
@@ -140,30 +128,6 @@ def test_to_dune_query_error_helper() -> None:
         Backend._to_dune_query_error(ValueError("nope"))
 
 
-def test_execute_sql_first_page_wraps_query_failed_error(
-    offline_backend: Backend,
-) -> None:
-    failed_status = SimpleNamespace(
-        state=ExecutionState.FAILED,
-        error=SimpleNamespace(message="Table does not exist"),
-    )
-    with (
-        patch.object(
-            offline_backend,
-            "_call_dune_api",
-            return_value=SimpleNamespace(execution_id="job-1"),
-        ),
-        patch.object(
-            offline_backend, "_wait_for_execution", return_value=failed_status
-        ),
-    ):
-        with pytest.raises(DuneQueryError) as exc_info:
-            offline_backend._execute_sql_first_page("SELECT 1")
-
-    assert "Table does not exist" in exc_info.value.message
-    assert isinstance(exc_info.value.original, QueryFailedError)
-
-
 def test_execute_auth_error_includes_api_key_hint(
     offline_backend: Backend,
 ) -> None:
@@ -175,10 +139,3 @@ def test_execute_auth_error_includes_api_key_hint(
             t.execute()
 
     assert "check dune_api_key" in exc_info.value.message
-
-
-def test_rest_auth_error_includes_api_key_hint() -> None:
-    exc = QueryFailedError("403 Forbidden: authentication failed")
-    wrapped = Backend._to_dune_query_error_from_rest(exc)
-    assert "check dune_api_key" in wrapped.message
-    assert wrapped.original is exc

@@ -37,30 +37,14 @@ def dune_backend(dune_api_key: str) -> Backend:
 
 
 @pytest.fixture(scope="session")
-def api_backend(dune_api_key: str) -> Backend:
-    return Backend().connect(dune_api_key=dune_api_key, force_api=True)
+def dune_api_key_free() -> str:
+    key = os.environ.get("DUNE_API_KEY_FREE")
+    if not key:
+        pytest.skip("DUNE_API_KEY_FREE not set")
+    return key
 
 
 @pytest.fixture(scope="session")
-def limits_backend(dune_api_key: str) -> Backend:
-    return Backend().connect(
-        dune_api_key=dune_api_key,
-        force_api=True,
-        dune_api_warning_bytes=10,
-        dune_api_max_bytes=10,
-    )
-
-
-@pytest.fixture(scope="session")
-def trino_backend(dune_backend: Backend) -> Backend:
-    """Return a Trino-connected backend; skip if tier fallback flipped to REST."""
-    dune_backend.sql("SELECT CAST(1 AS BIGINT) AS n").execute()
-    if dune_backend._use_api:
-        pytest.skip("Trino tier unavailable; backend fell back to REST")
-    return dune_backend
-
-
-@pytest.fixture(scope="session")
-def free_tier_backend(dune_api_key: str) -> Backend:
-    """Return a backend for free-tier keys that lack Trino access."""
-    return Backend().connect(dune_api_key=dune_api_key)
+def free_tier_backend(dune_api_key_free: str) -> Backend:
+    """Backend connected with a free-tier key (no Trino)."""
+    return Backend().connect(dune_api_key=dune_api_key_free)

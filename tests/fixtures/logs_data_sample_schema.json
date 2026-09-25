@@ -1,5 +1,0 @@
-{
-  "block_number": "int64",
-  "index": "int32",
-  "data": "binary"
-}

@@ -1,6 +1,0 @@
-{
-  "n": "int64",
-  "f": "float64",
-  "ts": "timestamp(0)",
-  "s": "string(1)"
-}

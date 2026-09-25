@@ -18,17 +18,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
-      - run: pytest -m "not integration and not trino and not parity_mock" -q
-
-  parity-mock:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-      - run: pip install -e ".[dev]"
-      - run: pytest -m parity_mock -q
+      - run: pytest -m "not integration" -q
 
   package:
     runs-on: ubuntu-latest

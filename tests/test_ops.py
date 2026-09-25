@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import logging
-
 import pytest
 from ibis import to_sql
 from ibis_dune import Backend
-from ibis_dune.exceptions import DuneResultTooLargeError
 from ibis_dune.ops import hex_literal
 
 from tests.helpers import bound_table
@@ -15,7 +12,6 @@ from tests.tables import (
     RENTED_TABLE,
     rented_raw_predicate,
     rented_raw_scalar,
-    rented_sample,
 )
 
 
@@ -60,37 +56,3 @@ def test_raw_scalar_compiles_and_executes(dune_backend: Backend) -> None:
     row = t.execute()
     assert row.shape == (1, 2)
     assert int(row["probe"].iloc[0]) == 42
-
-
-@pytest.mark.integration
-def test_execute_via_api_warns_when_result_exceeds_warning_threshold(
-    dune_api_key: str,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    backend = Backend().connect(
-        dune_api_key=dune_api_key,
-        force_api=True,
-        dune_api_warning_bytes=10,
-        dune_api_max_bytes=4 * 1024 * 1024 * 1024,
-    )
-    with caplog.at_level(logging.WARNING):
-        rented_sample(backend).to_pandas()
-
-    assert any("dune_api_warning_bytes" in record.message for record in caplog.records)
-
-
-@pytest.mark.integration
-def test_execute_via_api_raises_when_result_exceeds_max_bytes(
-    limits_backend: Backend,
-) -> None:
-    with pytest.raises(DuneResultTooLargeError) as exc_info:
-        rented_sample(limits_backend).to_pandas()
-
-    err = exc_info.value
-    assert err.total_bytes > err.max_bytes == 10
-
-
-@pytest.mark.integration
-def test_execute_via_api_within_limits(api_backend: Backend) -> None:
-    df = rented_sample(api_backend).to_pandas()
-    assert len(df) == 5

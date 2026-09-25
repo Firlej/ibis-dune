@@ -32,24 +32,21 @@ _NOT_FOUND_MESSAGE_RE = re.compile(
 
 
 class SchemaFetchMixin:
-    """Schema discovery via information_schema, LIMIT 0 probes, and REST type hints."""
+    """Schema discovery via information_schema and Trino LIMIT 0 probes."""
 
     @staticmethod
-    def _normalize_api_column_name(name: str) -> str:
-        """Strip SQL double-quotes Dune REST embeds in some ``column_names`` values."""
+    def _normalize_column_name(name: str) -> str:
+        """Strip SQL double-quotes that some column metadata embeds around names."""
         if len(name) >= 2 and name[0] == '"' and name[-1] == '"':
             return name[1:-1]
         return name
 
     @classmethod
     def _normalize_schema(cls, schema: ibis.Schema) -> ibis.Schema:
-        if all(cls._normalize_api_column_name(n) == n for n in schema.names):
+        if all(cls._normalize_column_name(n) == n for n in schema.names):
             return schema
         return ibis.Schema(
-            {
-                cls._normalize_api_column_name(name): dtype
-                for name, dtype in schema.items()
-            }
+            {cls._normalize_column_name(name): dtype for name, dtype in schema.items()}
         )
 
     @staticmethod
@@ -88,6 +85,8 @@ class SchemaFetchMixin:
         self,
         table_name: str,
         database: str,
+        *,
+        catalog: str | None = None,
     ) -> ibis.Table:
         """Return an expression for information_schema column metadata."""
 
@@ -96,7 +95,7 @@ class SchemaFetchMixin:
             Namespace,
         )
 
-        return (
+        expr = (
             DatabaseTable(
                 name="columns",
                 schema=INFORMATION_SCHEMA_COLUMNS_SCHEMA,
@@ -108,18 +107,21 @@ class SchemaFetchMixin:
                 _.table_name == table_name,
                 _.table_schema == database,
             )
-            .order_by("ordinal_position")
-            .select("column_name", "data_type")
         )
+        if catalog is not None:
+            expr = expr.filter(_.table_catalog == catalog)
+        return expr.order_by("ordinal_position").select("column_name", "data_type")
 
     def get_information_schema_columns_df(
         self,
         table_name: str,
         database: str,
+        *,
+        catalog: str | None = None,
     ):
         """Return information_schema column rows for ``(table_name, database)`` as a DataFrame."""
         return self.get_information_schema_columns_expr(
-            table_name, database
+            table_name, database, catalog=catalog
         ).to_pandas()
 
     def schema_from_information_schema_columns_df(self, columns_df) -> ibis.Schema:
@@ -149,28 +151,22 @@ class SchemaFetchMixin:
         if database is None:
             return ibis.schema({})
 
-        columns_df = self.get_information_schema_columns_df(table_name, database)
+        columns_df = self.get_information_schema_columns_df(
+            table_name, database, catalog=catalog
+        )
         return self.schema_from_information_schema_columns_df(columns_df)
 
     def information_schema_columns_sql(
         self,
         table_name: str,
         database: str,
+        *,
+        catalog: str | None = None,
     ) -> str:
         """Return compiled SQL for information_schema column metadata."""
-        return self.get_information_schema_columns_expr(table_name, database).compile()
-
-    def _prefer_api_column_types(
-        self, probe_sql: str, trino_schema: ibis.Schema
-    ) -> ibis.Schema:
-        """Use Dune REST column_types when Trino cursor metadata is lossy (e.g. varchar for varbinary)."""
-        try:
-            api_schema = self._normalize_schema(self._schema_from_api_limit0(probe_sql))
-        except Exception:
-            return trino_schema
-        if list(api_schema.names) != list(trino_schema.names):
-            return trino_schema
-        return api_schema
+        return self.get_information_schema_columns_expr(
+            table_name, database, catalog=catalog
+        ).compile()
 
     @classmethod
     def _is_not_found_error(cls, exc: BaseException) -> bool:
@@ -180,78 +176,32 @@ class SchemaFetchMixin:
         message = getattr(exc, "message", None) or str(exc)
         return bool(_NOT_FOUND_MESSAGE_RE.search(message))
 
-    def _schema_from_trino_limit0(self, qualified_table_sql: str) -> ibis.Schema:
-        probe = f"SELECT * FROM {qualified_table_sql} LIMIT 0"
+    def _schema_from_limit0_sql(self, sql: str) -> ibis.Schema:
+        """Return column types from a Trino ``LIMIT 0`` probe."""
         try:
             with self.begin() as cur:
-                cur.execute(probe)
+                cur.execute(sql)
                 desc = cur.description
-        except trino.exceptions.TrinoUserError as exc:
-            if self._flip_to_api_on_tier_error(exc):
-                return self._schema_from_api_limit0(
-                    f"SELECT * FROM {qualified_table_sql}"
-                )
-            raise self._dune_query_error_from_exc(exc) from None
         except (trino.exceptions.TrinoQueryError, trino.exceptions.HttpError) as exc:
             raise self._dune_query_error_from_exc(exc) from None
 
         if not desc:
             raise ValueError(
                 "Dune Trino returned no column metadata for schema inference "
-                f"(LIMIT 0 probe). Preview: {qualified_table_sql[:500]!r}"
-            )
-
-        trino_schema = self._schema_from_cursor_description(desc)
-        return self._prefer_api_column_types(
-            f"SELECT * FROM {qualified_table_sql}", trino_schema
-        )
-
-    def _schema_from_api_limit0(self, sql: str) -> ibis.Schema:
-        first = self._execute_sql_first_page(self._append_limit0(sql))
-        if first.result is None:
-            raise ValueError(
-                "Dune REST returned no result for schema inference "
                 f"(LIMIT 0 probe). Preview: {sql[:500]!r}"
             )
+        return self._normalize_schema(self._schema_from_cursor_description(desc))
 
-        meta = first.result.metadata
-        type_mapper = self.compiler.type_mapper
-        pairs = zip(meta.column_names, meta.column_types, strict=True)
-        return ibis.Schema(
-            {
-                name: type_mapper.from_string(typ).copy(nullable=True)
-                for name, typ in pairs
-            }
+    def _schema_from_trino_limit0(self, qualified_table_sql: str) -> ibis.Schema:
+        """Return the schema of a qualified table via ``SELECT * ... LIMIT 0``."""
+        return self._schema_from_limit0_sql(
+            f"SELECT * FROM {qualified_table_sql} LIMIT 0"
         )
 
     def _infer_schema_for_sql(self, inner_sql: str) -> ibis.Schema:
+        """Return the schema of arbitrary SQL via a LIMIT 0 probe."""
         inner = self._strip_trailing_semicolon(inner_sql)
-        if self.uses_api:
-            schema = self._schema_from_api_limit0(inner)
-        else:
-            try:
-                with self.begin() as cur:
-                    cur.execute(self._append_limit0(inner))
-                    desc = cur.description
-            except trino.exceptions.TrinoUserError as exc:
-                if self._flip_to_api_on_tier_error(exc):
-                    schema = self._schema_from_api_limit0(inner)
-                else:
-                    raise self._dune_query_error_from_exc(exc) from None
-            except (
-                trino.exceptions.TrinoQueryError,
-                trino.exceptions.HttpError,
-            ) as exc:
-                raise self._dune_query_error_from_exc(exc) from None
-            else:
-                if not desc:
-                    raise ValueError(
-                        "Dune Trino returned no column metadata for SQL schema inference "
-                        f"(LIMIT 0 probe). Preview: {inner[:500]!r}"
-                    )
-                trino_schema = self._schema_from_cursor_description(desc)
-                schema = self._prefer_api_column_types(inner, trino_schema)
-        return self._normalize_schema(schema)
+        return self._schema_from_limit0_sql(self._append_limit0(inner))
 
     def get_schema(
         self,
@@ -263,9 +213,8 @@ class SchemaFetchMixin:
         """Return table schema, raising ``TableNotFound`` for missing objects.
 
         Uses information_schema when available, then falls back to LIMIT 0 probes.
-        Missing table/schema/catalog errors are normalized to ``TableNotFound`` on
-        both Trino and REST paths. Other backend errors surface as
-        ``DuneQueryError``.
+        Missing table/schema/catalog errors are normalized to ``TableNotFound``.
+        Other backend errors surface as ``DuneQueryError``.
         """
         if table_name == "columns" and database == "information_schema":
             return INFORMATION_SCHEMA_COLUMNS_SCHEMA
@@ -278,23 +227,10 @@ class SchemaFetchMixin:
                 table_name, catalog=catalog, database=database
             )
             try:
-                if self.uses_api:
-                    schema = self._schema_from_api_limit0(f"SELECT * FROM {qualified}")
-                else:
-                    schema = self._schema_from_trino_limit0(qualified)
-            except (
-                trino.exceptions.TrinoUserError,
-                trino.exceptions.TrinoQueryError,
-                trino.exceptions.HttpError,
-                DuneQueryError,
-            ) as exc:
+                schema = self._schema_from_trino_limit0(qualified)
+            except DuneQueryError as exc:
                 if self._is_not_found_error(exc):
                     raise TableNotFound(qualified) from exc
-                if isinstance(exc, DuneQueryError):
-                    raise
-                if self._flip_to_api_on_tier_error(exc):
-                    schema = self._schema_from_api_limit0(f"SELECT * FROM {qualified}")
-                else:
-                    raise self._dune_query_error_from_exc(exc) from None
+                raise
 
-        return self._normalize_schema(schema)
+        return schema

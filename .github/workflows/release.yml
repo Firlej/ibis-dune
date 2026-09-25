@@ -22,7 +22,7 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Run offline tests
-        run: pytest -m "not integration and not trino and not parity_mock" -q
+        run: pytest -m "not integration" -q
 
       - name: Build distribution artifacts
         run: python -m build

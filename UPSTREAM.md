@@ -21,22 +21,19 @@ dune = "ibis_dune"
 
 After install: `import ibis; con = ibis.dune.connect(dune_api_key="...")`.
 
-`0.1.0` is the first public PyPI release of this standalone package.
+`0.1.0` is the first public PyPI release of this standalone package. `0.2.0` is Trino-only (no REST `/sql/execute` fallback).
 
-## Implemented in this repo (v0.1.0 scope)
+## Implemented in this repo
 
-- Backend composition and connection via `do_connect(...)`
-- Trino-first execution with automatic REST fallback
-- Trino/REST parity handling for `execute`, `_cursor_batches`, schema inference, and key coercions
+- Backend composition and connection via `do_connect(dune_api_key=...)`
+- Paid Trino execution at `trino.api.dune.com`
+- `DuneQueryError` translation (including a paid-plan hint on invalid performance tier)
 - `DuneCompiler` / `DuneType` with `uint256` mapping
 - SQL helper ops: `hex_literal`, `raw_predicate`, `raw_scalar`
-- Backend-specific exceptions: `DuneQueryError`, `DuneResultTooLargeError`
 - `ibis.backends` entry point registration (`dune = "ibis_dune"`)
 - Typed package marker (`py.typed`)
-- Contributor workflow docs (`CONTRIBUTING.md`)
 - Quality tooling (`ruff`, `pre-commit`) and CI jobs:
   - offline pytest matrix
-  - parity mock replay tests
   - package build + `twine check`
   - pre-commit hooks verification
 
@@ -45,7 +42,7 @@ After install: `import ibis; con = ibis.dune.connect(dune_api_key="...")`.
 - [ ] `Backend` in `ibis/backends/dune/__init__.py` with `do_connect(dune_api_key=...)`
 - [ ] Optional `_from_url` for `dune://` URLs
 - [ ] `DuneCompiler` / `DuneType` (sqlglot `Dune` dialect, `uint256` type mapping)
-- [ ] Trino + REST execution fallback, schema fetch, cursor cleanup
+- [ ] Trino execution, schema fetch, cursor cleanup, `DuneQueryError`
 - [ ] Tests under ibis backend conventions
 - [ ] Docs page at `ibis-project.org/backends/dune/`
 - [ ] Optional extra in ibis `pyproject.toml`: `dune = [...]`
